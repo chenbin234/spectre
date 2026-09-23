@@ -1,29 +1,43 @@
-%% RCUs-PAT-SNN with QPSK and n_p = 4 (Fig. 4 system parameters)
+%% RCUs-PAT-SNN with selectable symbols and n_p = 4 (Fig. 4 parameters)
 % Reference: Ostman et al., "Short Packets Over Block-Memoryless Fading
 % Channels: Pilot-Assisted or Noncoherent Transmission," 2019, Sec. IV-C.
 % Estimate packet error probability versus Eb/N0, minimizing over s=0:0.1:1.
-% eps_RCUs_stable calls idsamples (QPSK, ML pilot estimation, Rayleigh
+% eps_RCUs_stable calls idsamples (selected symbols, ML pilot estimation, Rayleigh
 % fading, SNN decoding) and eps_RCUs (the Monte Carlo RCUs bound).
 %
-% This uses QPSK as requested. The paper's Theorem 3 uses shell-distributed
-% data vectors (Appendix D) and minimizes over all s >= 0 (eq. (34)). Thus,
-% the QPSK finite-grid calculation need not match its published green curve.
+% The 'shell' option implements the paper's Theorem 3 data distribution and
+% joint block information density (Appendix D, eqs. (64)-(65)). The paper
+% minimizes over all s >= 0 (eq. (34)); the finite s grid here still limits
+% optimization accuracy, in addition to Monte Carlo estimation error.
+
+%% Input distribution (case-insensitive)
+symbol_distribution = 'shell'; % 'QPSK', '8PSK', 'unit_circle', or 'shell'
+% QPSK/8PSK: equiprobable points; unit_circle: phase uniform on [0,2*pi).
+% Shell: each data block is sqrt(nd*rho)*g/norm(g), g~CN(0,I_nd), drawn
+% independently across blocks. Symbol amplitudes vary, but energy is nd*rho.
+% PSK/unit_circle instead fix each symbol's energy to rho. The denominator
+% uses the matching finite sum, phase integral, or JOINT shell expectation.
+symbol_distribution = validatestring(symbol_distribution, ...
+    {'QPSK', '8PSK', 'unit_circle', 'shell'});
+distribution_label = strrep(symbol_distribution, '_', ' ');
 
 %% Figure 4 system parameters
 Mr = 1;                       % SISO: one receive antenna
 L = 7;                        % Independent coherence blocks per packet
 nc = 24;                      % Complex channel uses per block, incl. pilots
-np = 4;                       % Pilots PER block (28 per packet)
-nd = nc - np;                 % 20 QPSK data symbols per block
+np = 8;                       % Pilots PER block (28 per packet)
+nd = nc - np;                 % 20 data symbols per block
 n = L * nc;                   % 168 total channel uses, including pilots
 k = 81;                       % Information bits per packet (Sec. IV-C)
 R = k / n;                    % 0.482142857 bits per TOTAL channel use
 % The caption rounds R to 0.48. Do not use k/(L*nd) or k/(2*L*nd) here.
 % Fading is CN(0,1), i.e., kappa=0, as built into idsamples.m.
 % Pilot and data powers are equal: rho_p = rho_d = rho.
+% Keep k, R and rho fixed when changing the input distribution. In particular,
+% selecting 8PSK does not multiply R by its 3-bit constellation label size.
 
 %% Horizontal axis: Eb/N0, not symbol SNR
-EbN0_dB = 5:1:11;
+EbN0_dB = 5:1:10;
 rho = R * 10.^(EbN0_dB / 10);  % Eq. (8): Eb/N0 = rho/R, incl. pilot energy
 SNR_dB = 10 * log10(rho);
 
@@ -53,8 +67,8 @@ s_opt = nan(size(EbN0_dB));
 epsilon_s1 = nan(size(EbN0_dB));
 relative_spread = nan(size(EbN0_dB));
 
-fprintf('QPSK PAT-SNN, s=0:0.1:1: k=%d, n=%d, L=%d, nc=%d, np=%d\n', ...
-    k, n, L, nc, np);
+fprintf('%s PAT-SNN, s=0:0.1:1: k=%d, n=%d, L=%d, nc=%d, np=%d\n', ...
+    distribution_label, k, n, L, nc, np);
 fprintf('The estimator uses parfor; MATLAB may start a parallel pool.\n');
 
 for i_snr = 1:numel(EbN0_dB)
@@ -65,13 +79,13 @@ for i_snr = 1:numel(EbN0_dB)
     % which can dereference an empty poolobj if no pool exists yet.
     trial_grid = eps_RCUs_stable( ...
         R, Mr, L, np, nc, rho(i_snr), spa, RELSPREAD_MAX, ...
-        N_MC_MIN, N_MC_MAX, N_REP_TRIALS, d_verbose, s_grid);
+        N_MC_MIN, N_MC_MAX, N_REP_TRIALS, d_verbose, s_grid, symbol_distribution);
     assert(all(isfinite(trial_grid(:))) && ...
         all(trial_grid(:) >= 0 & trial_grid(:) <= 1), ...
         'The RCUs estimator returned a nonfinite or invalid probability.');
 
     epsilon_trials(:, :, i_snr) = trial_grid;
-    % Match the existing QPSK wrapper's median aggregation for each s.
+    % Match the existing wrapper's median aggregation for each s.
     epsilon_by_s(:, i_snr) = median(trial_grid, 1).';
     relative_spread_by_s(:, i_snr) = arrayfun( ...
         @(j) relspread(trial_grid(:, j)), (1:numel(s_grid)).');
@@ -91,7 +105,8 @@ results = table(EbN0_dB(:), SNR_dB(:), rho(:), epsilon(:), s_opt(:), ...
     'epsilon_s1', 'relative_spread', 'grid_spread_target_met'});
 disp(results);
 
-figure('Name', 'RCUs-PAT-SNN: QPSK, n_p = 4, optimized s');
+figure('Name', sprintf('RCUs-PAT-SNN: %s, n_p = %d, optimized s', ...
+    distribution_label, np));
 subplot(1, 2, 1);
 semilogy(EbN0_dB, epsilon, '-^', 'Color', [0 0.6 0], 'LineWidth', 1.5);
 hold on;
@@ -100,10 +115,10 @@ hold off;
 grid on;
 xlabel('E_b/N_0 [dB]');
 ylabel('Packet error probability, \epsilon');
-title('RCUs-PAT-SNN: QPSK, optimized s, n_p = 4, n_c = 24, L = 7');
+title('Bound versus E_b/N_0');
 legend('Minimum over s = 0:0.1:1', 'Fixed s = 1', 'Location', 'southwest');
 xlim([3 12]);
-ylim([1e-5 1e-1]);              % Same visible range as Fig. 4
+ylim([1e-5 1e-1]);
 
 subplot(1, 2, 2);
 semilogy(SNR_dB, epsilon, '-^', 'Color', [0 0.6 0], 'LineWidth', 1.5);
@@ -111,9 +126,10 @@ hold on;
 semilogy(SNR_dB, epsilon_s1, '--o', 'Color', [0.4 0.4 0.4], 'LineWidth', 1.2);
 hold off;
 grid on;
-xlabel('SNR_dB');
+xlabel('\rho [dB] (symbol SNR)');
 ylabel('Packet error probability, \epsilon');
 title('Bound versus \rho');
 legend('Minimum over s = 0:0.1:1', 'Fixed s = 1', 'Location', 'southwest');
 ylim([1e-5 1e-1]);
-sgtitle('RCUs-PAT-SNN: QPSK, optimized s, n_p = 4, n_c = 24, L = 7');
+sgtitle(sprintf('RCUs-PAT-SNN: %s, optimized s, n_p = %d, n_c = %d, L = %d', ...
+    distribution_label, np, nc, L));

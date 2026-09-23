@@ -1,11 +1,19 @@
 function eps_trial = eps_RCUs_stable(R, Mr, L, np, nc, rho, spa, ...
-                RELSPREAD_MAX, N_MC_MIN, N_MC_MAX, N_REP_TRIALS, d_verbose, s)
+                RELSPREAD_MAX, N_MC_MIN, N_MC_MAX, N_REP_TRIALS, d_verbose, ...
+                s, symbol_distribution)
 %EPS_RCUS_STABLE returns the error probability computed via RCUs in a system 
 %with parameters: R (rate), Mr (number of rx antennas), L (number of blocks), 
 %np (number of pilots), nc (size of coherence block), rho (SNR linear). 
 % Optional S defaults to 1. A vector uses common samples for all exponents,
 % returning N_REP_TRIALS-by-numel(S) estimates. The relative-spread target
 % must be met for every grid point before the adaptive sampling stops.
+% Optional SYMBOL_DISTRIBUTION: 'QPSK' (default), '8PSK', 'unit_circle', 'shell'.
+
+    if nargin < 14
+        symbol_distribution = 'QPSK';
+    end
+    symbol_distribution = validatestring(symbol_distribution, ...
+        {'QPSK', '8PSK', 'unit_circle', 'shell'}, mfilename, 'symbol_distribution');
 
     if nargin < 13
         s = 1;
@@ -66,7 +74,7 @@ function eps_trial = eps_RCUs_stable(R, Mr, L, np, nc, rho, spa, ...
         parfor i_trial = 1:N_REP_TRIALS
             if spa == 0 %no saddlepoint approximation
                 % Generate information density samples
-                i_s = idsamples(Mr, L, np, nc, rho, N_MC, s);
+                i_s = idsamples(Mr, L, np, nc, rho, N_MC, s, symbol_distribution);
 
                 % Compute error probability
                 trial_row = zeros(1, n_s);
@@ -75,7 +83,7 @@ function eps_trial = eps_RCUs_stable(R, Mr, L, np, nc, rho, spa, ...
                 end
             else %saddlepoint approximation
                 % Generate information density samples with L = 1
-                i_s = idsamples(Mr, 1, np, nc, rho, N_MC, s);
+                i_s = idsamples(Mr, 1, np, nc, rho, N_MC, s, symbol_distribution);
                 
                 % Compute error probability using saddlepoint approximation
                 trial_row = zeros(1, n_s);

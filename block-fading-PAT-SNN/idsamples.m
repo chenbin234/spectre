@@ -1,16 +1,25 @@
-function i_s = idsamples(Mr, L, np, nc, rho, N_MC )
+function i_s = idsamples(Mr, L, np, nc, rho, N_MC, s)
+%IDSAMPLES QPSK PAT-SNN information densities, in natural logarithms.
+% Optional S defaults to 1. Output is N_MC-by-numel(S), with common data,
+% channel and noise samples across all exponents.
 
 if nargin < 6
     N_MC = 1e6;             % cap the number of iterations 
 end
 
+if nargin < 7
+    s = 1;
+end
+validateattributes(s, {'numeric'}, {'vector', 'nonempty', 'real', ...
+    'finite', 'nonnegative'}, mfilename, 's');
+s = s(:).';
+
 % Other parameters
-s = 1;                      % Gallager exponent (to be optimised)
 sigmaEst = 1/sqrt(rho*np);  % estimation error standard deviation
 nd = nc - np;               % data symbols per coherence time
 
 % Generate samples
-i_s = zeros(L,N_MC);
+i_s = zeros(N_MC,numel(s));
 for n_mc = 1:N_MC
     for l=1:L
         % Generate data and channel for the coherence block
@@ -25,16 +34,9 @@ for n_mc = 1:N_MC
         ytilde_l = ytilde_l(:);
 
         % Compute the information density for the block
-        aux = 0;
-        for t = 1:nd
-            aux = aux + idgallagerqpsknn( x_l(t), ytilde_l(t), ...
-                htildeEst_l, s, rho);
-        end
-        i_s( l, n_mc ) = aux;
+        symbol_density = idgallagerqpsknn(x_l, ytilde_l, htildeEst_l, s, rho);
+        i_s(n_mc, :) = i_s(n_mc, :) + sum(symbol_density, 1);
     end
 end
 
-i_s = sum(i_s,1); % row vector    
-i_s = i_s(:);   % column vector
-    
-
+end

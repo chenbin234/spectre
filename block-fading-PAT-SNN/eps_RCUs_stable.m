@@ -1,10 +1,21 @@
 function eps_trial = eps_RCUs_stable(R, Mr, L, np, nc, rho, spa, ...
-                RELSPREAD_MAX, N_MC_MIN, N_MC_MAX, N_REP_TRIALS, d_verbose)
+                RELSPREAD_MAX, N_MC_MIN, N_MC_MAX, N_REP_TRIALS, d_verbose, s)
 %EPS_RCUS_STABLE returns the error probability computed via RCUs in a system 
 %with parameters: R (rate), Mr (number of rx antennas), L (number of blocks), 
 %np (number of pilots), nc (size of coherence block), rho (SNR linear). 
+% Optional S defaults to 1. A vector uses common samples for all exponents,
+% returning N_REP_TRIALS-by-numel(S) estimates. The relative-spread target
+% must be met for every grid point before the adaptive sampling stops.
 
-	if nargin < 12
+    if nargin < 13
+        s = 1;
+    end
+    validateattributes(s, {'numeric'}, {'vector', 'nonempty', 'real', ...
+        'finite', 'nonnegative'}, mfilename, 's');
+    s = s(:).';
+    n_s = numel(s);
+
+    if nargin < 12
         d_verbose = 2;      % set verbosity
     end
     
@@ -50,35 +61,49 @@ function eps_trial = eps_RCUs_stable(R, Mr, L, np, nc, rho, spa, ...
     
     while b_iter == 1
         
-        eps_trial = zeros(N_REP_TRIALS,1);
+        eps_trial = zeros(N_REP_TRIALS,n_s);
         
         parfor i_trial = 1:N_REP_TRIALS
             if spa == 0 %no saddlepoint approximation
                 % Generate information density samples
-                i_s = idsamples(Mr, L, np, nc, rho, N_MC );
+                i_s = idsamples(Mr, L, np, nc, rho, N_MC, s);
 
                 % Compute error probability
-                eps_trial(i_trial) = eps_RCUs(i_s, n, R);
+                trial_row = zeros(1, n_s);
+                for j_s = 1:n_s
+                    trial_row(j_s) = eps_RCUs(i_s(:, j_s), n, R);
+                end
             else %saddlepoint approximation
                 % Generate information density samples with L = 1
-                i_s = idsamples(Mr, 1, np, nc, rho, N_MC );
+                i_s = idsamples(Mr, 1, np, nc, rho, N_MC, s);
                 
                 % Compute error probability using saddlepoint approximation
-                eps_trial(i_trial) = eps_RCUs_SPA(i_s, n, L, R);
+                trial_row = zeros(1, n_s);
+                for j_s = 1:n_s
+                    if s(j_s) == 0
+                        % Exact RCUs value; the SPA has zero variance here.
+                        trial_row(j_s) = eps_RCUs(zeros(N_MC, 1), n, R);
+                    else
+                        trial_row(j_s) = eps_RCUs_SPA(i_s(:, j_s), n, L, R);
+                    end
+                end
             end
+            eps_trial(i_trial, :) = trial_row;
 
         end
         
         % Check spread of data
-        relspread_eps = relspread(eps_trial); % relative spread
+        relspread_eps = arrayfun(@(j) relspread(eps_trial(:, j)), 1:n_s);
         
         if d_verbose >= 2
             fprintf('  %.3e', eps_trial);
-            fprintf('\n  Relative spread: %.3e\n', relspread_eps);
+            fprintf('\n  Relative spread by s:');
+            fprintf(' %.3e', relspread_eps);
+            fprintf('\n');
         end 
                 
         % Stopping conditions
-        if relspread_eps < RELSPREAD_MAX % accuracy reached
+        if all(relspread_eps < RELSPREAD_MAX) % accuracy reached for all s
             b_iter = 0;
             if d_verbose >= 1
                 fprintf(' Estimation accuracy reached with %d trials.\n',N_MC);

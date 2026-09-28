@@ -1,6 +1,6 @@
 function eps_trial = eps_RCUs_stable(R, Mr, L, np, nc, rho, spa, ...
                 RELSPREAD_MAX, N_MC_MIN, N_MC_MAX, N_REP_TRIALS, d_verbose, ...
-                s, symbol_distribution)
+                s, symbol_distribution, perfect_CSI_estimation)
 %EPS_RCUS_STABLE returns the error probability computed via RCUs in a system 
 %with parameters: R (rate), Mr (number of rx antennas), L (number of blocks), 
 %np (number of pilots), nc (size of coherence block), rho (SNR linear). 
@@ -8,6 +8,14 @@ function eps_trial = eps_RCUs_stable(R, Mr, L, np, nc, rho, spa, ...
 % returning N_REP_TRIALS-by-numel(S) estimates. The relative-spread target
 % must be met for every grid point before the adaptive sampling stops.
 % Optional SYMBOL_DISTRIBUTION: 'QPSK' (default), '8PSK', 'unit_circle', 'shell'.
+% Optional PERFECT_CSI_ESTIMATION defaults to 0 (pilot-based CSI). When 1,
+% the decoder uses the true channel in place of its noisy estimate.
+
+    if nargin < 15
+        perfect_CSI_estimation = 0;
+    end
+    validateattributes(perfect_CSI_estimation, {'numeric', 'logical'}, ...
+        {'scalar', 'binary'}, mfilename, 'perfect_CSI_estimation');
 
     if nargin < 14
         symbol_distribution = 'QPSK';
@@ -74,7 +82,8 @@ function eps_trial = eps_RCUs_stable(R, Mr, L, np, nc, rho, spa, ...
         parfor i_trial = 1:N_REP_TRIALS
             if spa == 0 %no saddlepoint approximation
                 % Generate information density samples
-                i_s = idsamples(Mr, L, np, nc, rho, N_MC, s, symbol_distribution);
+                i_s = idsamples(Mr, L, np, nc, rho, N_MC, s, ...
+                    symbol_distribution, perfect_CSI_estimation);
 
                 % Compute error probability
                 trial_row = zeros(1, n_s);
@@ -83,7 +92,8 @@ function eps_trial = eps_RCUs_stable(R, Mr, L, np, nc, rho, spa, ...
                 end
             else %saddlepoint approximation
                 % Generate information density samples with L = 1
-                i_s = idsamples(Mr, 1, np, nc, rho, N_MC, s, symbol_distribution);
+                i_s = idsamples(Mr, 1, np, nc, rho, N_MC, s, ...
+                    symbol_distribution, perfect_CSI_estimation);
                 
                 % Compute error probability using saddlepoint approximation
                 trial_row = zeros(1, n_s);

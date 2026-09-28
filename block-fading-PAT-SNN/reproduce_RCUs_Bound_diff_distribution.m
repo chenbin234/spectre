@@ -8,7 +8,8 @@
 % The run time is roughly the sum of the single-distribution runs.
 
 %% Input distributions (case-insensitive)
-all_distributions = {'QPSK', '8PSK', 'unit_circle', 'shell'};
+all_distributions = {'QPSK'};
+% all_distributions = {'QPSK', '8PSK', 'unit_circle', 'shell'};
 symbol_distributions = all_distributions; % Or a subset, e.g. {'QPSK', 'shell'}
 symbol_distributions = cellfun(@(d) validatestring(d, all_distributions), ...
     symbol_distributions, 'UniformOutput', false);
@@ -19,7 +20,7 @@ n_dist = numel(symbol_distributions);
 Mr = 1;                       % SISO: one receive antenna
 L = 4;                        % Independent coherence blocks per packet
 nc = 16;                      % Complex channel uses per block, incl. pilots
-np = 2;                       % Pilots PER block (L*np per packet)
+np = 1;                       % Pilots PER block (L*np per packet)
 nd = nc - np;                 % Data symbols per block
 n = L * nc;                   % 168 total channel uses, including pilots
 k = 64;                       % Information bits per packet (Sec. IV-C)
@@ -30,12 +31,13 @@ R = k / n;                    % 0.482142857 bits per TOTAL channel use
 % inputs at equal rate and energy (8PSK does not triple R, for example).
 
 %% Horizontal axis: Eb/N0, not symbol SNR
-EbN0_dB = 10:1:20;
+EbN0_dB = 5:1:20;
 rho = R * 10.^(EbN0_dB / 10);  % Eq. (8): Eb/N0 = rho/R, incl. pilot energy
 SNR_dB = 10 * log10(rho);
 
 %% Numerical settings (chosen here, not specified by the paper)
 spa = 0;                      % Direct RCUs, without saddlepoint approximation
+perfect_CSI_estimation = 1;   % 1: use the true channel; 0: use pilot-based CSI
 s_grid = 0:0.1:1;             % One common s for the entire packet
 RELSPREAD_MAX = 0.15;          % Interquartile range / median across repeats
 N_MC_MIN = 2^14;               % Initial packet samples per repeat
@@ -73,7 +75,8 @@ for i_dist = 1:n_dist
         % which can dereference an empty poolobj if no pool exists yet.
         trial_grid = eps_RCUs_stable( ...
             R, Mr, L, np, nc, rho(i_snr), spa, RELSPREAD_MAX, N_MC_MIN, ...
-            N_MC_MAX, N_REP_TRIALS, d_verbose, s_grid, symbol_distributions{i_dist});
+            N_MC_MAX, N_REP_TRIALS, d_verbose, s_grid, ...
+            symbol_distributions{i_dist}, perfect_CSI_estimation);
         assert(all(isfinite(trial_grid(:))) && ...
             all(trial_grid(:) >= 0 & trial_grid(:) <= 1), ...
             'The RCUs estimator returned a nonfinite or invalid probability.');
@@ -115,7 +118,7 @@ line_markers = {'o', 's', 'd', '^'};
 x_values = {EbN0_dB, SNR_dB};
 x_labels = {'E_b/N_0 [dB]', '\rho [dB] (symbol SNR)'};
 panel_titles = {'Bound versus E_b/N_0', 'Bound versus \rho'};
-x_limits = {[8 24], 'auto'};
+x_limits = {'auto', 'auto'};
 
 figure('Name', sprintf('RCUs-PAT-SNN: all distributions, n_p = %d, optimized s', ...
     np), 'Units', 'normalized', 'Position', [0.05 0.1 0.9 0.75]);
@@ -138,5 +141,5 @@ for i_panel = 1:2
     xlim(ax, x_limits{i_panel});
     ylim(ax, [1e-5 1e-1]);
 end
-sgtitle(sprintf('RCUs-PAT-SNN, optimized s: n_p = %d, n_c = %d, L = %d', ...
-    np, nc, L), 'FontSize', font_size + 4);
+sgtitle(sprintf('RCUs-PAT-SNN, optimized s: n_p = %d, n_c = %d, L = %d, k = %d, r = %d', ...
+    np, nc, L, k, R), 'FontSize', font_size + 4);

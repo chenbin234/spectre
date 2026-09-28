@@ -1,8 +1,10 @@
-function i_s = idsamples(Mr, L, np, nc, rho, N_MC, s, symbol_distribution)
+function i_s = idsamples(Mr, L, np, nc, rho, N_MC, s, symbol_distribution, perfect_CSI_estimation)
 %IDSAMPLES PAT-SNN information densities, in natural logarithms.
 % Optional S defaults to 1. Output is N_MC-by-numel(S), with common data,
 % channel and noise samples across all exponents.
 % Optional SYMBOL_DISTRIBUTION: 'QPSK' (default), '8PSK', 'unit_circle', 'shell'.
+% Optional PERFECT_CSI_ESTIMATION defaults to 0 (pilot-based CSI). When 1,
+% the decoder uses the generated channel exactly.
 % PSK/unit_circle have constant symbol magnitude. Shell has fixed block
 % energy (nc-np)*rho and is isotropic over C^(nc-np), as in the paper.
 
@@ -16,6 +18,11 @@ end
 if nargin < 8
     symbol_distribution = 'QPSK';
 end
+if nargin < 9
+    perfect_CSI_estimation = 0;
+end
+validateattributes(perfect_CSI_estimation, {'numeric', 'logical'}, ...
+    {'scalar', 'binary'}, mfilename, 'perfect_CSI_estimation');
 symbol_distribution = validatestring(symbol_distribution, ...
     {'QPSK', '8PSK', 'unit_circle', 'shell'}, mfilename, 'symbol_distribution');
 is_shell = strcmp(symbol_distribution, 'shell');
@@ -53,7 +60,11 @@ for n_mc = 1:N_MC
         end
         x_l = sqrt(rho) * symbols;
         h_l = randcn(Mr,1);
-        hEst_l = h_l + sigmaEst * randcn(Mr,1);
+        if perfect_CSI_estimation
+            hEst_l = h_l;
+        else
+            hEst_l = h_l + sigmaEst * randcn(Mr,1);
+        end
         n_l = randcn(Mr,nd);
         y_l = h_l * x_l.' + n_l;
 
